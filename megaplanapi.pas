@@ -24,17 +24,23 @@ type
     constructor Create(Host, Proto: string);
     destructor Destroy;
 
-    function Login(Username, Password: string): boolean;
+    function Login(Username, Password: string): string;
     function Get(const URL: string):string;
     function Post(const URL:string):string;
     property Data: string read GetData write SetData;
 end;
 
 Function GetJSONValue(JSONString, JSONParam: string): string;
-
+procedure DebugMsg(const Msg: String);
 implementation
 
-uses XMLDoc, ActiveX, XMLDom;
+uses XMLDoc, ActiveX, XMLDom, Windows;
+
+
+procedure DebugMsg(const Msg: String);
+begin
+    OutputDebugString(PChar(Msg))
+end;
 
 { TMegaplanRequest }
 
@@ -64,7 +70,6 @@ begin
     str:=BaseString.DataString;
     str:=StringReplace(str, #13, '#13', [rfReplaceAll]);
     str:=StringReplace(str, #10, '#10', [rfReplaceAll]);
-    Writeln('Calc:'+#13#10+'='+#13#10+str+'='+Result);
 
   finally
     BaseString.Free;
@@ -112,15 +117,16 @@ begin
   result := value;
 end;
 
-function TMegaplanRequest.Login(Username, Password: string):boolean;
+function TMegaplanRequest.Login(Username, Password: string):string;
 var PasswordMD5 : string;
     DataStream: TstringStream;
     URL:string;
 begin
-  Result:=False;
+  Result:='Login failed (internal reason)';
   PasswordMD5:=StrToHex(MD5(Password));
   DataStream:=TStringStream.Create;
   URL := 'https://'+FHost+'/BumsCommonApiV01/User/authorize.api?Login='+Username+'&Password='+PasswordMD5;
+  DebugMsg(URL);
   try
     with THTTPSend.Create do
       begin
@@ -130,13 +136,23 @@ begin
         else
           Exception.Create(Format(cErrString,[ResultCode,ResultString]));
 
+        DebugMsg('Login response "'+DataStream.DataString+'"');
+
         //Parse
         if Pos('{"status":{"code":"ok","message":null}', DataStream.DataString) >0 then
         begin
           FAccessId  :=GetJSONValue(DataStream.DataString, 'AccessId');
           FSecretKey :=GetJSONValue(DataStream.DataString, 'SecretKey');
-          Result:=True;
-        end;
+          DebugMsg('Key: '+FAccessId+':'+FSecretKey);
+          Result:='ok';
+        end
+        else
+          begin
+            DebugMsg('Key: failed to login, reason: "'+DataStream.DataString+'"');
+            Result:=DataStream.DataString;
+          end;
+        DebugMsg(Format('LastError: %d(%s)',[Sock.LastError,Sock.LastErrorDesc]));
+        DebugMsg(Format('SSL Error: %d(%s)',[Sock.SSL.LastError,Sock.SSL.LastErrorDesc]));
       end;
   finally
     DataStream.Free;
